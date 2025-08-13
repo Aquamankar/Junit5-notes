@@ -1,0 +1,161 @@
+
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------
+1️⃣ Example Controller
+
+@RestController
+@RequestMapping("/api/students")
+@RequiredArgsConstructor
+public class StudentController {
+
+    private final StudentService studentService;
+
+    @PostMapping
+    public ResponseEntity<Student> createStudent(@RequestBody Student student) {
+        return ResponseEntity.ok(studentService.saveStudent(student));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Student> getStudentById(@PathVariable Long id) {
+        return ResponseEntity.ok(studentService.getStudentById(id));
+    }
+
+    @GetMapping
+    public ResponseEntity<List<Student>> getAllStudents() {
+        return ResponseEntity.ok(studentService.getAllStudents());
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteStudent(@PathVariable Long id) {
+        studentService.deleteStudentById(id);
+        return ResponseEntity.noContent().build();
+    }
+}
+
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+2️⃣ Controller Test (BDD Style)
+
+
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.util.List;
+
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureMockMvc
+@Testcontainers
+class StudentControllerBDDTest {
+
+    @Container
+    static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0.32")
+            .withDatabaseName("testdb")
+            .withUsername("test")
+            .withPassword("test");
+
+    @DynamicPropertySource
+    static void configureProps(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", mysql::getJdbcUrl);
+        registry.add("spring.datasource.username", mysql::getUsername);
+        registry.add("spring.datasource.password", mysql::getPassword);
+    }
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private StudentRepo studentRepo;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    Student student;
+
+    @BeforeEach
+    void setUp() {
+        studentRepo.deleteAll();
+        student = new Student(null, "John Doe", 22, "john@example.com");
+    }
+
+    @Test
+    void givenStudent_whenCreateStudent_thenReturnSavedStudent() throws Exception {
+        // Given
+        String studentJson = objectMapper.writeValueAsString(student);
+
+        // When & Then
+        mockMvc.perform(post("/api/students")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(studentJson))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name", is("John Doe")))
+                .andExpect(jsonPath("$.age", is(22)))
+                .andExpect(jsonPath("$.email", is("john@example.com")));
+    }
+
+    @Test
+    void givenStudentInDB_whenGetStudentById_thenReturnStudent() throws Exception {
+        // Given
+        Student saved = studentRepo.save(student);
+
+        // When & Then
+        mockMvc.perform(get("/api/students/{id}", saved.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name", is("John Doe")))
+                .andExpect(jsonPath("$.email", is("john@example.com")));
+    }
+
+    @Test
+    void givenMultipleStudents_whenGetAllStudents_thenReturnList() throws Exception {
+        // Given
+        studentRepo.saveAll(List.of(
+                student,
+                new Student(null, "Jane Doe", 25, "jane@example.com")
+        ));
+
+        // When & Then
+        mockMvc.perform(get("/api/students"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)));
+    }
+
+    @Test
+    void givenStudentInDB_whenDeleteStudent_thenReturnNoContent() throws Exception {
+        // Given
+        Student saved = studentRepo.save(student);
+
+        // When & Then
+        mockMvc.perform(delete("/api/students/{id}", saved.getId()))
+                .andExpect(status().isNoContent());
+    }
+}
+
+
+-------------------------------------3️⃣ BDD Structure Recap---------------------------------------------------------
+In controller tests:
+
+Given → Insert test data into the repository (or prepare request payload).
+
+When → Perform the HTTP request with MockMvc.
+
+Then → Assert status code, response body, and JSON structure.
+

@@ -38,6 +38,135 @@ public interface StudentRepo extends JpaRepository<Student, Long> {
     Optional<Student> findByEmail(String email);
     boolean existsByEmail(String email);
 }
+------------------------------------------------------------------------------------------------------------------------------------
+
+
+2️⃣ Testcontainers + BDD style Repository Test
+java
+Copy
+Edit
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@DataJpaTest
+@Testcontainers
+class StudentRepoBDDTest {
+
+    @Container
+    static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0.32")
+            .withDatabaseName("testdb")
+            .withUsername("test")
+            .withPassword("test");
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", mysql::getJdbcUrl);
+        registry.add("spring.datasource.username", mysql::getUsername);
+        registry.add("spring.datasource.password", mysql::getPassword);
+    }
+
+    @Autowired
+    private StudentRepo studentRepo;
+
+    Student student;
+
+    @BeforeEach
+    void setUp() {
+        student = new Student(null, "John Doe", 22, "john@example.com");
+        studentRepo.deleteAll();
+    }
+
+    @Test
+    void givenStudent_whenSave_thenStudentIsPersisted() {
+        // Given
+        Student saved = studentRepo.save(student);
+
+        // When
+        Optional<Student> found = studentRepo.findById(saved.getId());
+
+        // Then
+        assertThat(found).isPresent();
+        assertThat(found.get().getName()).isEqualTo("John Doe");
+    }
+
+    @Test
+    void givenStudentInDB_whenFindByEmail_thenReturnStudent() {
+        // Given
+        studentRepo.save(student);
+
+        // When
+        Optional<Student> found = studentRepo.findByEmail("john@example.com");
+
+        // Then
+        assertThat(found).isPresent();
+        assertThat(found.get().getEmail()).isEqualTo("john@example.com");
+    }
+
+    @Test
+    void givenStudentInDB_whenExistsByEmail_thenReturnTrue() {
+        // Given
+        studentRepo.save(student);
+
+        // When
+        boolean exists = studentRepo.existsByEmail("john@example.com");
+
+        // Then
+        assertThat(exists).isTrue();
+    }
+
+    @Test
+    void givenMultipleStudents_whenFindAll_thenReturnList() {
+        // Given
+        studentRepo.saveAll(List.of(
+                student,
+                new Student(null, "Jane Doe", 25, "jane@example.com")
+        ));
+
+        // When
+        List<Student> students = studentRepo.findAll();
+
+        // Then
+        assertThat(students).hasSize(2);
+    }
+
+    @Test
+    void givenStudentInDB_whenDeleteById_thenRemovedFromDB() {
+        // Given
+        Student saved = studentRepo.save(student);
+
+        // When
+        studentRepo.deleteById(saved.getId());
+        Optional<Student> deleted = studentRepo.findById(saved.getId());
+
+        // Then
+        assertThat(deleted).isNotPresent();
+    }
+}
+3️⃣ How BDD fits here
+Even though JPA repository tests are mostly arrange–act–assert, you can still keep BDD clarity:
+
+Given → insert data / define initial state
+
+When → perform the repository method call
+
+Then → assert the expected results
+
+
+
+
+
 
 -----------------------------------------------------------------------------------------------------------------------------------------
 

@@ -1,0 +1,130 @@
+-------------------------------------------------------------------------------------------------------------------------------------
+save()
+
+findById()
+
+findByEmail()
+
+existsByEmail()
+
+findAll()
+
+deleteById()
+-------------------------------------------------------------------------------------------------------------------------------
+----------------------------------1️⃣ Example Student Entity------------------------------------------------------------------
+
+
+@Entity
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class Student {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String name;
+    private Integer age;
+    private String email;
+}
+
+------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------2️⃣ Example Repository Interface---------------------------------------------------------
+
+
+
+@Repository
+public interface StudentRepo extends JpaRepository<Student, Long> {
+    Optional<Student> findByEmail(String email);
+    boolean existsByEmail(String email);
+}
+
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------3️⃣ Repository Test with Testcontainers MySQL---------------------------------------------------------
+
+
+@DataJpaTest
+@Testcontainers
+class StudentRepoTest {
+
+    @Container
+    static MySQLContainer<?> mysqlContainer = new MySQLContainer<>("mysql:8.0.36")
+            .withDatabaseName("testdb")
+            .withUsername("testuser")
+            .withPassword("testpass");
+
+    @DynamicPropertySource
+    static void setProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", mysqlContainer::getJdbcUrl);
+        registry.add("spring.datasource.username", mysqlContainer::getUsername);
+        registry.add("spring.datasource.password", mysqlContainer::getPassword);
+    }
+
+    @Autowired
+    StudentRepo studentRepo;
+
+    Student savedStudent;
+
+    @BeforeEach
+    void setup() {
+        studentRepo.deleteAll();
+        savedStudent = studentRepo.save(new Student(null, "John Doe", 22, "john@example.com"));
+    }
+
+    @Test
+    void testSaveStudent() {
+        Student student = new Student(null, "Jane Doe", 25, "jane@example.com");
+        Student saved = studentRepo.save(student);
+
+        assertNotNull(saved.getId());
+        assertEquals("Jane Doe", saved.getName());
+    }
+
+    @Test
+    void testFindById() {
+        Optional<Student> found = studentRepo.findById(savedStudent.getId());
+        assertTrue(found.isPresent());
+        assertEquals("John Doe", found.get().getName());
+    }
+
+    @Test
+    void testFindByEmail() {
+        Optional<Student> found = studentRepo.findByEmail("john@example.com");
+        assertTrue(found.isPresent());
+        assertEquals(savedStudent.getId(), found.get().getId());
+    }
+
+    @Test
+    void testExistsByEmail() {
+        boolean exists = studentRepo.existsByEmail("john@example.com");
+        assertTrue(exists);
+    }
+
+    @Test
+    void testFindAll() {
+        List<Student> students = studentRepo.findAll();
+        assertEquals(1, students.size());
+    }
+
+    @Test
+    void testDeleteById() {
+        studentRepo.deleteById(savedStudent.getId());
+        Optional<Student> deleted = studentRepo.findById(savedStudent.getId());
+        assertFalse(deleted.isPresent());
+    }
+}
+------------------------------------------------------------------------
+
+4️⃣ Notes & Best Practices
+@DataJpaTest → loads only JPA-related components, making tests faster.
+
+Testcontainers MySQL → ensures you test against a real MySQL instance, not H2.
+
+Use @BeforeEach to insert test data before each test.
+
+Always clear data in setup() to avoid data leakage between tests.
+
+Write one test per repository method for clarity.
+
+

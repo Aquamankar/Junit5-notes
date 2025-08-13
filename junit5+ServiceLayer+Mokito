@@ -1,0 +1,289 @@
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------
+1️⃣ Example Service Class
+We’ll assume our service handles business logic and delegates to the repository.
+
+
+@Service
+@RequiredArgsConstructor
+public class StudentService {
+
+    private final StudentRepo studentRepo;
+
+    public Student saveStudent(Student student) {
+        if (studentRepo.existsByEmail(student.getEmail())) {
+            throw new IllegalArgumentException("Email already exists: " + student.getEmail());
+        }
+        return studentRepo.save(student);
+    }
+
+    public Student getStudentById(Long id) {
+        return studentRepo.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Student not found with id: " + id));
+    }
+
+    public Student getStudentByEmail(String email) {
+        return studentRepo.findByEmail(email)
+                .orElseThrow(() -> new NoSuchElementException("Student not found with email: " + email));
+    }
+
+    public List<Student> getAllStudents() {
+        return studentRepo.findAll();
+    }
+
+    public void deleteStudent(Long id) {
+        if (!studentRepo.existsById(id)) {
+            throw new NoSuchElementException("Cannot delete. Student not found with id: " + id);
+        }
+        studentRepo.deleteById(id);
+    }
+}
+
+-----------------------------------------------------------------------------------------------------------------------------------------------
+
+2️⃣ BDD Style Service Test
+Using given() from org.mockito.BDDMockito:
+
+
+import static org.mockito.BDDMockito.*;
+import static org.assertj.core.api.Assertions.*;
+
+@ExtendWith(MockitoExtension.class)
+class StudentServiceBDDTest {
+
+    @Mock
+    private StudentRepo studentRepo;
+
+    @InjectMocks
+    private StudentService studentService;
+
+    Student student;
+
+    @BeforeEach
+    void setUp() {
+        student = new Student(1L, "John Doe", 22, "john@example.com");
+    }
+
+    @Test
+    void givenNewStudent_whenSaveStudent_thenReturnSavedStudent() {
+        // Given
+        given(studentRepo.existsByEmail(student.getEmail())).willReturn(false);
+        given(studentRepo.save(student)).willReturn(student);
+
+        // When
+        Student saved = studentService.saveStudent(student);
+
+        // Then
+        assertThat(saved).isNotNull();
+        assertThat(saved.getName()).isEqualTo("John Doe");
+        then(studentRepo).should().save(student);
+    }
+
+    @Test
+    void givenExistingEmail_whenSaveStudent_thenThrowException() {
+        // Given
+        given(studentRepo.existsByEmail(student.getEmail())).willReturn(true);
+
+        // When / Then
+        assertThatThrownBy(() -> studentService.saveStudent(student))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Email already exists");
+
+        then(studentRepo).should(never()).save(any());
+    }
+
+    @Test
+    void givenId_whenGetStudentById_thenReturnStudent() {
+        // Given
+        given(studentRepo.findById(1L)).willReturn(Optional.of(student));
+
+        // When
+        Student found = studentService.getStudentById(1L);
+
+        // Then
+        assertThat(found.getEmail()).isEqualTo("john@example.com");
+    }
+
+    @Test
+    void givenInvalidId_whenGetStudentById_thenThrowException() {
+        // Given
+        given(studentRepo.findById(1L)).willReturn(Optional.empty());
+
+        // When / Then
+        assertThatThrownBy(() -> studentService.getStudentById(1L))
+                .isInstanceOf(NoSuchElementException.class)
+                .hasMessageContaining("Student not found");
+    }
+
+    @Test
+    void givenEmail_whenGetStudentByEmail_thenReturnStudent() {
+        // Given
+        given(studentRepo.findByEmail("john@example.com")).willReturn(Optional.of(student));
+
+        // When
+        Student found = studentService.getStudentByEmail("john@example.com");
+
+        // Then
+        assertThat(found.getAge()).isEqualTo(22);
+    }
+
+    @Test
+    void givenStudents_whenGetAllStudents_thenReturnList() {
+        // Given
+        given(studentRepo.findAll()).willReturn(List.of(student));
+
+        // When
+        List<Student> students = studentService.getAllStudents();
+
+        // Then
+        assertThat(students).hasSize(1);
+    }
+
+    @Test
+    void givenValidId_whenDeleteStudent_thenDeleteFromRepo() {
+        // Given
+        given(studentRepo.existsById(1L)).willReturn(true);
+        willDoNothing().given(studentRepo).deleteById(1L);
+
+        // When
+        studentService.deleteStudent(1L);
+
+        // Then
+        then(studentRepo).should().deleteById(1L);
+    }
+
+    @Test
+    void givenInvalidId_whenDeleteStudent_thenThrowException() {
+        // Given
+        given(studentRepo.existsById(1L)).willReturn(false);
+
+        // When / Then
+        assertThatThrownBy(() -> studentService.deleteStudent(1L))
+                .isInstanceOf(NoSuchElementException.class)
+                .hasMessageContaining("Cannot delete");
+    }
+}
+
+
+3️⃣ BDD Testing Notes
+given(...) → sets up preconditions.
+
+willReturn(...) / willThrow(...) → define mock behavior.
+
+then(...) → verify interactions.
+
+assertThat from AssertJ gives fluent, readable assertions.
+
+We explicitly cover both positive and negative scenarios.
+
+----------------------------------------------------------------------------------------------------------------------------------------------
+2️⃣ Service Layer Unit Test (Mocking Repository)
+
+For service layer tests, we don’t use a database. Instead, we mock the repository using @Mock and @InjectMocks.
+
+@ExtendWith(MockitoExtension.class)
+class StudentServiceTest {
+
+    @Mock
+    private StudentRepo studentRepo;
+
+    @InjectMocks
+    private StudentService studentService;
+
+    Student student;
+
+    @BeforeEach
+    void setUp() {
+        student = new Student(1L, "John Doe", 22, "john@example.com");
+    }
+
+    @Test
+    void testSaveStudent_Success() {
+        when(studentRepo.existsByEmail(student.getEmail())).thenReturn(false);
+        when(studentRepo.save(any(Student.class))).thenReturn(student);
+
+        Student saved = studentService.saveStudent(student);
+
+        assertEquals("John Doe", saved.getName());
+        verify(studentRepo).save(student);
+    }
+
+    @Test
+    void testSaveStudent_EmailExists() {
+        when(studentRepo.existsByEmail(student.getEmail())).thenReturn(true);
+
+        assertThrows(IllegalArgumentException.class, () -> studentService.saveStudent(student));
+
+        verify(studentRepo, never()).save(any());
+    }
+
+    @Test
+    void testGetStudentById_Found() {
+        when(studentRepo.findById(1L)).thenReturn(Optional.of(student));
+
+        Student found = studentService.getStudentById(1L);
+
+        assertEquals("John Doe", found.getName());
+    }
+
+    @Test
+    void testGetStudentById_NotFound() {
+        when(studentRepo.findById(1L)).thenReturn(Optional.empty());
+
+        assertThrows(NoSuchElementException.class, () -> studentService.getStudentById(1L));
+    }
+
+    @Test
+    void testGetStudentByEmail_Found() {
+        when(studentRepo.findByEmail("john@example.com")).thenReturn(Optional.of(student));
+
+        Student found = studentService.getStudentByEmail("john@example.com");
+
+        assertEquals(22, found.getAge());
+    }
+
+    @Test
+    void testGetAllStudents() {
+        when(studentRepo.findAll()).thenReturn(List.of(student));
+
+        List<Student> students = studentService.getAllStudents();
+
+        assertEquals(1, students.size());
+    }
+
+    @Test
+    void testDeleteStudent_Success() {
+        when(studentRepo.existsById(1L)).thenReturn(true);
+
+        studentService.deleteStudent(1L);
+
+        verify(studentRepo).deleteById(1L);
+    }
+
+    @Test
+    void testDeleteStudent_NotFound() {
+        when(studentRepo.existsById(1L)).thenReturn(false);
+
+        assertThrows(NoSuchElementException.class, () -> studentService.deleteStudent(1L));
+
+        verify(studentRepo, never()).deleteById(anyLong());
+    }
+}
+--------------------------------------------------------------------------------------------------------------------------------------------
+3️⃣ Key Points to Remember for Service Layer Tests
+
+
+No real DB: use @ExtendWith(MockitoExtension.class) and mock repository dependencies.
+
+@InjectMocks: injects mocked dependencies into the service automatically.
+
+Arrange → Act → Assert pattern:
+
+Arrange → set up mock behavior with when(...).
+
+Act → call the service method.
+
+Assert → verify results and interactions with verify().
+
+Always test both success and failure scenarios.

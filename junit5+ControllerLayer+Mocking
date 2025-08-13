@@ -1,0 +1,141 @@
+
+
+No database involved (mock the service layer instead).
+
+Use @WebMvcTest for Controller only.
+
+Use Mockito’s BDDMockito (given(), willDoNothing(), etc.).
+
+
+===========================================================================================================
+1️⃣ Example Controller (same as before)
+
+@RestController
+@RequestMapping("/api/students")
+@RequiredArgsConstructor
+public class StudentController {
+
+    private final StudentService studentService;
+
+    @PostMapping
+    public ResponseEntity<Student> createStudent(@RequestBody Student student) {
+        return ResponseEntity.ok(studentService.saveStudent(student));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Student> getStudentById(@PathVariable Long id) {
+        return ResponseEntity.ok(studentService.getStudentById(id));
+    }
+
+    @GetMapping
+    public ResponseEntity<List<Student>> getAllStudents() {
+        return ResponseEntity.ok(studentService.getAllStudents());
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteStudent(@PathVariable Long id) {
+        studentService.deleteStudentById(id);
+        return ResponseEntity.noContent().build();
+    }
+}
+
+
+==========================================2️⃣ Controller Unit Test (BDD Style, No DB)===================================================
+
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.List;
+
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
+import static org.mockito.BDDMockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+@WebMvcTest(StudentController.class)
+class StudentControllerUnitTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @MockBean
+    private StudentService studentService;
+
+    @Test
+    void givenStudent_whenCreateStudent_thenReturnSavedStudent() throws Exception {
+        // Given
+        Student student = new Student(1L, "John Doe", 22, "john@example.com");
+        given(studentService.saveStudent(any(Student.class))).willReturn(student);
+
+        // When & Then
+        mockMvc.perform(post("/api/students")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(student)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name", is("John Doe")))
+                .andExpect(jsonPath("$.email", is("john@example.com")));
+    }
+
+    @Test
+    void givenStudentInService_whenGetStudentById_thenReturnStudent() throws Exception {
+        // Given
+        Student student = new Student(1L, "John Doe", 22, "john@example.com");
+        given(studentService.getStudentById(1L)).willReturn(student);
+
+        // When & Then
+        mockMvc.perform(get("/api/students/{id}", 1L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name", is("John Doe")));
+    }
+
+    @Test
+    void givenMultipleStudents_whenGetAllStudents_thenReturnList() throws Exception {
+        // Given
+        List<Student> students = List.of(
+                new Student(1L, "John Doe", 22, "john@example.com"),
+                new Student(2L, "Jane Doe", 25, "jane@example.com")
+        );
+        given(studentService.getAllStudents()).willReturn(students);
+
+        // When & Then
+        mockMvc.perform(get("/api/students"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)));
+    }
+
+    @Test
+    void givenStudentId_whenDeleteStudent_thenReturnNoContent() throws Exception {
+        // Given
+        willDoNothing().given(studentService).deleteStudentById(1L);
+
+        // When & Then
+        mockMvc.perform(delete("/api/students/{id}", 1L))
+                .andExpect(status().isNoContent());
+    }
+}
+
+---------------------------------------------------------------------------------------------------------------------
+3️⃣ Key Points
+@WebMvcTest → Loads only the controller & MVC infrastructure, not the full Spring context.
+
+@MockBean → Mocks the service layer so no database is called.
+
+BDDMockito:
+
+given(...) for method stubbing.
+
+willDoNothing() for void methods.
+
+MockMvc → Simulates HTTP calls without running a server.
+
+Fast: Runs in milliseconds, perfect for unit tests.
